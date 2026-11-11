@@ -12,7 +12,7 @@ Pending -> Preparing -> Out for Delivery -> Delivered (Cancelled only while Pend
 - Rider: view assigned orders, mark as Delivered
  
 ## Phase status
-- [/] Phase 1 - Analysis, Design and Local Prototype
+- [X] Phase 1 - Analysis, Design and Local Prototype
 - [ ] Phase 2 - Firebase Foundation
 - [ ] Phase 3 - Complete Workflow
 - [ ] Phase 4 - Testing and Defense
