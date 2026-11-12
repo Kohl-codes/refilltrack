@@ -74,8 +74,8 @@ class AddOrderActivity : AppCompatActivity() {
         }
 
         binding.tvMessage.text = ""
-        val order = OrderRepository.add(name, phone, address, gallons)   // FR-03: Pending
+        val order = OrderRepository.add(name, phone, address, gallons)
         Toast.makeText(this, "Order " + order.id + " saved as Pending", Toast.LENGTH_SHORT).show()
-        finish()     // back to Dashboard, which refreshes in onResume()
+        finish()
     }
 }

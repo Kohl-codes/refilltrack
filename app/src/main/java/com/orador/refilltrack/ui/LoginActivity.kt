@@ -38,7 +38,7 @@ class LoginActivity : AppCompatActivity() {
         Session.currentUser = user
         binding.tvMessage.text = ""
 
-        // FR-01: open the screen that matches the role
+
         val target = if (user.role == Role.STAFF) {
             DashboardActivity::class.java
         } else {
