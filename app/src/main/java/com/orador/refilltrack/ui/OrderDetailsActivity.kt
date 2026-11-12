@@ -28,7 +28,6 @@ class OrderDetailsActivity : AppCompatActivity() {
         private const val EXTRA_STATUS = "extra_status"
         private const val EXTRA_RIDER_ID = "extra_rider_id"
 
-        // Data passing: build the Intent that carries the selected order
         fun newIntent(context: Context, order: Order): Intent {
             val intent = Intent(context, OrderDetailsActivity::class.java)
             intent.putExtra(EXTRA_ID, order.id)
@@ -51,7 +50,6 @@ class OrderDetailsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // BR-10: only logged-in users may open this screen
         val user = Session.currentUser
         if (user == null) {
             Session.logout(this)
@@ -61,7 +59,6 @@ class OrderDetailsActivity : AppCompatActivity() {
         binding = ActivityOrderDetailsBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // Receive the data that was passed through the Intent extras
         orderId = intent.getStringExtra(EXTRA_ID) ?: ""
         val name = intent.getStringExtra(EXTRA_NAME) ?: ""
         val phone = intent.getStringExtra(EXTRA_PHONE) ?: ""
@@ -78,7 +75,6 @@ class OrderDetailsActivity : AppCompatActivity() {
         binding.btnLogout.setOnClickListener { Session.logout(this) }
     }
 
-    // FR-12: show the full details, current status and assigned rider
     private fun showOrder(name: String, phone: String, address: String, gallons: Int) {
         binding.tvOrderId.text = "Order $orderId"
         binding.tvCustomer.text = "Customer: $name"
@@ -106,14 +102,12 @@ class OrderDetailsActivity : AppCompatActivity() {
             ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, items)
     }
 
-    // BR-03, BR-04, BR-05: show only the buttons this role may use right now
     private fun setupButtons(role: String, uid: String) {
         binding.layoutAssign.visibility = View.GONE
         binding.btnAction.visibility = View.GONE
         binding.btnCancel.visibility = View.GONE
         binding.tvLocked.visibility = View.GONE
 
-        // BR-05: Delivered and Cancelled orders are locked
         if (status == OrderStatus.DELIVERED || status == OrderStatus.CANCELLED) {
             binding.tvLocked.visibility = View.VISIBLE
             return
@@ -123,7 +117,7 @@ class OrderDetailsActivity : AppCompatActivity() {
             if (status == OrderStatus.PENDING) {
                 binding.btnAction.text = "START PREPARING"
                 binding.btnAction.visibility = View.VISIBLE
-                binding.btnCancel.visibility = View.VISIBLE      // BR-04: Pending only
+                binding.btnCancel.visibility = View.VISIBLE
             } else if (status == OrderStatus.PREPARING) {
                 binding.btnAction.text = "SET OUT FOR DELIVERY"
                 binding.btnAction.visibility = View.VISIBLE
@@ -139,11 +133,9 @@ class OrderDetailsActivity : AppCompatActivity() {
         binding.btnCancel.setOnClickListener { confirmCancel() }
     }
 
-    // FR-06, FR-07, FR-09: move the order exactly one step forward
     private fun performAction(role: String) {
         var chosenRider: String? = null
 
-// BR-02: a rider must be selected before Out for Delivery
         if (role == Role.STAFF && status == OrderStatus.PREPARING) {
             val position = binding.spRider.selectedItemPosition
             if (position <= 0) {
@@ -162,7 +154,6 @@ class OrderDetailsActivity : AppCompatActivity() {
         }
     }
 
-    // FR-10: cancel (Pending only) after confirmation
     private fun confirmCancel() {
         AlertDialog.Builder(this)
             .setTitle("Cancel order")
