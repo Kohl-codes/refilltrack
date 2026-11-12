@@ -1,21 +1,52 @@
 package com.orador.refilltrack.ui
 
+import android.content.Intent
 import android.os.Bundle
-import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import com.orador.refilltrack.R
+import com.orador.refilltrack.data.LocalAuth
+import com.orador.refilltrack.data.Session
+import com.orador.refilltrack.databinding.ActivityLoginBinding
+import com.orador.refilltrack.model.Role
 
 class LoginActivity : AppCompatActivity() {
+
+    private lateinit var binding: ActivityLoginBinding
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
-        setContentView(R.layout.activity_login)
-        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
-            insets
+        binding = ActivityLoginBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        binding.btnLogin.setOnClickListener { attemptLogin() }
+    }
+
+    private fun attemptLogin() {
+        val email = binding.etEmail.text.toString().trim()
+        val password = binding.etPassword.text.toString()
+
+        // BR-09: both fields are required
+        if (email.isEmpty() || password.isEmpty()) {
+            binding.tvMessage.text = "Please fill in all fields"
+            return
         }
+        val user = LocalAuth.login(email, password)
+        if (user == null) {
+            binding.tvMessage.text = "Invalid email or password"
+            return
+        }
+
+        Session.currentUser = user
+        binding.tvMessage.text = ""
+
+        // FR-01: open the screen that matches the role
+        val target = if (user.role == Role.STAFF) {
+            DashboardActivity::class.java
+        } else {
+            MyDeliveriesActivity::class.java
+        }
+        startActivity(Intent(this, target))
+        finish()     // remove Login from the back stack
     }
 }
+
+
