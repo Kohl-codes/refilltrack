@@ -1,71 +1,102 @@
 package com.orador.refilltrack.data
 
+import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.FirebaseFirestore
 import com.orador.refilltrack.model.Order
 import com.orador.refilltrack.model.OrderStatus
 
+// Phase 2: orders are stored in Cloud Firestore, collection "orders".
+// (Phase 1 used a local list here. Update and cancel are added in Phase 3.)
 object OrderRepository {
 
-    private val orders = mutableListOf(
-        Order("ORD-001", "Ana Reyes", "09171234567",
-            "Blk 5 Lot 2, Lahug, Cebu City", 3, OrderStatus.PENDING),
-        Order("ORD-002", "Carlos Lim", "09281112233",
-            "12 Mango Ave, Cebu City", 2, OrderStatus.PENDING),
-        Order("ORD-003", "Dina Flores", "09393334455",
-            "88 Colon St, Cebu City", 5, OrderStatus.PREPARING),
-        Order("ORD-004", "Eddie Tan", "09175556677",
-            "Banilad Town Centre, Cebu City", 4, OrderStatus.PREPARING),
-        Order("ORD-005", "Faye Garcia", "09284445566",
-            "21 Archbishop Reyes Ave, Cebu City", 2, OrderStatus.OUT_FOR_DELIVERY, "u_rider1"),
-        Order("ORD-006", "Gino Ramos", "09177778899",
-            "7 Gorordo Ave, Cebu City", 6, OrderStatus.OUT_FOR_DELIVERY, "u_rider2"),
-        Order("ORD-007", "Hanna Cruz", "09391112244",
-            "45 Escario St, Cebu City", 3, OrderStatus.DELIVERED, "u_rider1"),
-        Order("ORD-008", "Ian Uy", "09283334411",
-            "19 Salinas Dr, Cebu City", 1, OrderStatus.CANCELLED)
-    )
+    private const val ORDERS = "orders"
+    private val db = FirebaseFirestore.getInstance()
 
-    private var counter = orders.size
-
-    fun getActive(): List<Order> = orders.filter { it.status in OrderStatus.activeStatuses }
-    fun getHistory(): List<Order> = orders.filter { it.status in OrderStatus.historyStatuses }
-    fun getForRider(riderId: String): List<Order> = orders.filter { it.riderId == riderId && it.status == OrderStatus.OUT_FOR_DELIVERY }
-    fun countByStatus(status: String): Int = orders.count { it.status == status }
-
-    fun add(customerName: String, phone: String, address: String, gallons: Int): Order {
-        counter++
-        val order = Order(
-            id = "ORD-%03d".format(counter),
-            customerName = customerName,
-            phone = phone,
-            address = address,
-            gallons = gallons,
-            status = OrderStatus.PENDING
+    // ------------------------------------------------------------ CREATE
+    // FR-03: save a new order. The status always starts as Pending.
+    fun addOrder(
+        customerName: String,
+        phone: String,
+        address: String,
+        gallons: Int,
+        onSuccess: (String) -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val data = hashMapOf(
+            "customerName" to customerName,
+            "phone" to phone,
+            "address" to address,
+            "gallons" to gallons,
+            "status" to OrderStatus.PENDING,
+            "riderId" to "",
+            "createdAt" to System.currentTimeMillis()
         )
-        orders.add(0, order)      // newest order on top
-        return order
+
+        db.collection(ORDERS)
+            .add(data)                                   // Firestore creates the document ID
+            .addOnSuccessListener { ref -> onSuccess(ref.id) }
+            .addOnFailureListener { e -> onError(e.message ?: "Could not save the order") }
     }
 
-
-    fun advanceStatus(orderId: String, riderId: String? = null): Boolean {
-        val index = orders.indexOfFirst { it.id == orderId }
-        if (index == -1) return false
-        val current = orders[index]
-        val nextStatus = OrderStatus.next(current.status) ?: return false
-        val finalRider = riderId ?: current.riderId
-        if (nextStatus == OrderStatus.OUT_FOR_DELIVERY && finalRider.isBlank()) return false
-
-        orders[index] = current.copy(status = nextStatus, riderId = finalRider)
-        return true
+    // ------------------------------------------------------------ READ
+    // FR-04: Active tab = Pending, Preparing, Out for Delivery
+    fun loadActive(onResult: (List<Order>) -> Unit, onError: (String) -> Unit) {
+        loadByStatuses(OrderStatus.activeStatuses, onResult, onError)
     }
 
-    fun cancel(orderId: String): Boolean {
-        val index = orders.indexOfFirst { it.id == orderId }
-        if (index == -1) return false
+    // FR-05: History tab = Delivered, Cancelled
+    fun loadHistory(onResult: (List<Order>) -> Unit, onError: (String) -> Unit) {
+        loadByStatuses(OrderStatus.historyStatuses, onResult, onError)
+    }
 
-        val current = orders[index]
-        if (current.status != OrderStatus.PENDING) return false
+    private fun loadByStatuses(
+        statuses: List<String>,
+        onResult: (List<Order>) -> Unit,
+        onError: (String) -> Unit
+    ) {
+        db.collection(ORDERS)
+            .whereIn("status", statuses)
+            .get()
+            .addOnSuccessListener { snapshot ->
+                val orders = snapshot.documents
+                    .mapNotNull { doc -> toOrder(doc) }
+                    .sortedByDescending { it.createdAt }     // newest first
+                onResult(orders)
+            }
+            .addOnFailureListener { e -> onError(e.message ?: "Could not load orders") }
+    }
 
-        orders[index] = current.copy(status = OrderStatus.CANCELLED)
-        return true
+    // FR-08: a rider sees only their own orders that are Out for Delivery
+    fun loadForRider(
+        riderId: String,
+        onResult: (List<Order>) -> Unit,
+        onError: (String) -> Unit
+    ) {
+        db.collection(ORDERS)
+            .whereEqualTo("riderId", riderId)
+            .whereEqualTo("status", OrderStatus.OUT_FOR_DELIVERY)
+            .get()
+            .addOnSuccessListener { snapshot ->
+                val orders = snapshot.documents
+                    .mapNotNull { doc -> toOrder(doc) }
+                    .sortedByDescending { it.createdAt }
+                onResult(orders)
+            }
+            .addOnFailureListener { e -> onError(e.message ?: "Could not load deliveries") }
+    }
+
+    // Converts one Firestore document into our Order data class
+    private fun toOrder(doc: DocumentSnapshot): Order? {
+        val name = doc.getString("customerName") ?: return null
+        return Order(
+            id = doc.id,
+            customerName = name,
+            phone = doc.getString("phone") ?: "",
+            address = doc.getString("address") ?: "",
+            gallons = (doc.getLong("gallons") ?: 0L).toInt(),
+            status = doc.getString("status") ?: OrderStatus.PENDING,
+            riderId = doc.getString("riderId") ?: "",
+            createdAt = doc.getLong("createdAt") ?: 0L
+        )
     }
 }

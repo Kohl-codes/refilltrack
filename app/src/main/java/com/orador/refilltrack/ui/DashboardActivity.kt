@@ -3,6 +3,7 @@ package com.orador.refilltrack.ui
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.widget.addTextChangedListener
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -16,9 +17,14 @@ import com.orador.refilltrack.model.OrderStatus
 import com.orador.refilltrack.model.Role
 
 class DashboardActivity : AppCompatActivity() {
+
     private lateinit var binding: ActivityDashboardBinding
     private lateinit var adapter: OrderAdapter
     private var showingActive = true
+
+    private var activeOrders: List<Order> = emptyList()
+    private var historyOrders: List<Order> = emptyList()
+    private var loadFailed = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -34,10 +40,12 @@ class DashboardActivity : AppCompatActivity() {
 
         binding.tvWelcome.text = "RefillTrack - " + user.name
 
+        // RecyclerView + adapter
         adapter = OrderAdapter(emptyList()) { order -> openDetails(order) }
         binding.rvOrders.layoutManager = LinearLayoutManager(this)
         binding.rvOrders.adapter = adapter
 
+        // Active | History tabs
         binding.tabLayout.addTab(binding.tabLayout.newTab().setText("Active"))
         binding.tabLayout.addTab(binding.tabLayout.newTab().setText("History"))
         binding.tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
@@ -49,7 +57,7 @@ class DashboardActivity : AppCompatActivity() {
             override fun onTabReselected(tab: TabLayout.Tab?) {}
         })
 
-        // Search as the staff types
+        // Search as the staff types (filters the lists already loaded)
         binding.etSearch.addTextChangedListener { refreshList() }
 
         binding.btnLogout.setOnClickListener { Session.logout(this) }
@@ -60,11 +68,40 @@ class DashboardActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (::binding.isInitialized) refreshList()
+        if (::binding.isInitialized) loadOrders()
     }
 
+    // READ: two Firestore queries, one for Active and one for History
+    private fun loadOrders() {
+        loadFailed = false
+        binding.tvEmpty.text = "Loading orders..."
+        binding.tvEmpty.visibility = View.VISIBLE
+
+        OrderRepository.loadActive(
+            onResult = { orders ->
+                activeOrders = orders
+                refreshList()
+            },
+            onError = { message -> showLoadError(message) }
+        )
+        OrderRepository.loadHistory(
+            onResult = { orders ->
+                historyOrders = orders
+                refreshList()
+            },
+            onError = { message -> showLoadError(message) }
+        )
+    }
+
+    private fun showLoadError(message: String) {
+        loadFailed = true
+        Toast.makeText(this, "Could not load orders: " + message, Toast.LENGTH_LONG).show()
+        refreshList()
+    }
+
+    // DISPLAY: show the right list in the RecyclerView
     private fun refreshList() {
-        val base = if (showingActive) OrderRepository.getActive() else OrderRepository.getHistory()
+        val base = if (showingActive) activeOrders else historyOrders
         val query = binding.etSearch.text.toString().trim()
         val shown = if (query.isEmpty()) {
             base
@@ -73,18 +110,23 @@ class DashboardActivity : AppCompatActivity() {
         }
 
         adapter.updateList(shown)
+        binding.tvEmpty.text = if (loadFailed) {
+            "Could not load orders. Check your connection."
+        } else {
+            "No orders to show."
+        }
         binding.tvEmpty.visibility = if (shown.isEmpty()) View.VISIBLE else View.GONE
         updateSummary()
     }
 
     private fun updateSummary() {
-        binding.tvCountActive.text = OrderRepository.getActive().size.toString()
+        binding.tvCountActive.text = activeOrders.size.toString()
         binding.tvCountPreparing.text =
-            OrderRepository.countByStatus(OrderStatus.PREPARING).toString()
+            activeOrders.count { it.status == OrderStatus.PREPARING }.toString()
         binding.tvCountOnRoad.text =
-            OrderRepository.countByStatus(OrderStatus.OUT_FOR_DELIVERY).toString()
+            activeOrders.count { it.status == OrderStatus.OUT_FOR_DELIVERY }.toString()
         binding.tvCountDone.text =
-            OrderRepository.countByStatus(OrderStatus.DELIVERED).toString()
+            historyOrders.count { it.status == OrderStatus.DELIVERED }.toString()
     }
 
     private fun openDetails(order: Order) {

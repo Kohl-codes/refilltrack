@@ -23,7 +23,6 @@ class AddOrderActivity : AppCompatActivity() {
 
         binding = ActivityAddOrderBinding.inflate(layoutInflater)
         setContentView(binding.root)
-
         binding.btnBack.setOnClickListener { finish() }
         binding.btnLogout.setOnClickListener { Session.logout(this) }
         binding.btnSave.setOnClickListener { saveOrder() }
@@ -74,8 +73,24 @@ class AddOrderActivity : AppCompatActivity() {
         }
 
         binding.tvMessage.text = ""
-        val order = OrderRepository.add(name, phone, address, gallons)
-        Toast.makeText(this, "Order " + order.id + " saved as Pending", Toast.LENGTH_SHORT).show()
-        finish()
+        setSaving(true)
+
+        // CREATE: write the new order to Cloud Firestore
+        OrderRepository.addOrder(
+            name, phone, address, gallons,
+            onSuccess = {
+                Toast.makeText(this, "Order saved as Pending", Toast.LENGTH_SHORT).show()
+                finish()
+            },
+            onError = { message ->
+                setSaving(false)
+                binding.tvMessage.text = "Could not save the order: " + message
+            }
+        )
+    }
+
+    private fun setSaving(saving: Boolean) {
+        binding.btnSave.isEnabled = !saving
+        binding.btnSave.text = if (saving) "Saving..." else "Save order"
     }
 }

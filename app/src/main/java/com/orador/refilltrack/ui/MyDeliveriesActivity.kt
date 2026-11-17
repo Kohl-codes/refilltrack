@@ -2,6 +2,7 @@ package com.orador.refilltrack.ui
 
 import android.os.Bundle
 import android.view.View
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.orador.refilltrack.adapter.OrderAdapter
@@ -42,12 +43,26 @@ class MyDeliveriesActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (::binding.isInitialized) refreshList()
+        if (::binding.isInitialized) loadDeliveries()
     }
 
-    private fun refreshList() {
-        val myOrders = OrderRepository.getForRider(riderId)
-        adapter.updateList(myOrders)
-        binding.tvEmpty.visibility = if (myOrders.isEmpty()) View.VISIBLE else View.GONE
+    // READ: only this rider's orders that are Out for Delivery
+    private fun loadDeliveries() {
+        binding.tvEmpty.text = "Loading deliveries..."
+        binding.tvEmpty.visibility = View.VISIBLE
+
+        OrderRepository.loadForRider(
+            riderId,
+            onResult = { orders ->
+                adapter.updateList(orders)
+                binding.tvEmpty.text = "No deliveries assigned to you."
+                binding.tvEmpty.visibility = if (orders.isEmpty()) View.VISIBLE else View.GONE
+            },
+            onError = { message ->
+                binding.tvEmpty.text = "Could not load deliveries. Check your connection."
+                binding.tvEmpty.visibility = View.VISIBLE
+                Toast.makeText(this, "Could not load deliveries: " + message, Toast.LENGTH_LONG).show()
+            }
+        )
     }
 }
