@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "769138746538",
+    "project_id": "refilltrack-intprog",
+    "storage_bucket": "refilltrack-intprog.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:769138746538:android:22eafba54c7355736d5cd3",
+        "android_client_info": {
+          "package_name": "com.orador.refilltrack"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCzUKSGxh93F-rNj5-x18gbjOUKqVw6rFs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
