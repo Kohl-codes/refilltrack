@@ -13,7 +13,7 @@ Pending -> Preparing -> Out for Delivery -> Delivered (Cancelled only while Pend
  
 ## Phase status
 - [X] Phase 1 - Analysis, Design and Local Prototype
-- [ ] Phase 2 - Firebase Foundation
+- [X] Phase 2 - Firebase Foundation
 - [ ] Phase 3 - Complete Workflow
 - [ ] Phase 4 - Testing and Defense
  
