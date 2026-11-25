@@ -257,6 +257,14 @@
             android:maxLines="1" />
     </com.google.android.material.textfield.TextInputLayout>
 
+    <Spinner
+        android:id="@+id/spStatus"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginTop="4dp"
+        android:layout_marginEnd="16dp" />
+
     <!-- Order list -->
     <FrameLayout
         android:layout_width="match_parent"
