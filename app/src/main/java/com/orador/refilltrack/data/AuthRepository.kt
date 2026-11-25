@@ -4,6 +4,7 @@ import com.google.firebase.FirebaseNetworkException
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.orador.refilltrack.model.User
+import com.orador.refilltrack.model.Role
 
 // Phase 2: login with Firebase Authentication, role from Cloud Firestore
 object AuthRepository {
@@ -76,4 +77,26 @@ object AuthRepository {
     fun logout() {
         auth.signOut()
     }
+
+    // READ: all users whose role is "rider" (used by the Assign Rider spinner)
+    fun loadRiders(onResult: (List<User>) -> Unit, onError: (String) -> Unit) {
+        db.collection(USERS)
+            .whereEqualTo("role", Role.RIDER)
+            .get()
+            .addOnSuccessListener { snapshot ->
+                val riders = snapshot.documents.map { doc ->
+                    User(
+                        uid = doc.id,
+                        name = doc.getString("name") ?: "Unnamed rider",
+                        email = doc.getString("email") ?: "",
+                        role = Role.RIDER
+                    )
+                }.sortedBy { it.name }
+                onResult(riders)
+            }
+            .addOnFailureListener { e -> onError(e.message ?: "Could not load riders") }
+    }
+
+
+
 }

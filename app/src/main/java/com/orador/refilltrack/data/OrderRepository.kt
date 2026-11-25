@@ -1,19 +1,21 @@
 package com.orador.refilltrack.data
 
+import com.google.android.gms.tasks.Task
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FirebaseFirestoreException
+import com.google.firebase.firestore.Transaction
 import com.orador.refilltrack.model.Order
 import com.orador.refilltrack.model.OrderStatus
+import com.orador.refilltrack.model.Role
+import com.orador.refilltrack.model.User
 
-// Phase 2: orders are stored in Cloud Firestore, collection "orders".
-// (Phase 1 used a local list here. Update and cancel are added in Phase 3.)
 object OrderRepository {
 
     private const val ORDERS = "orders"
     private val db = FirebaseFirestore.getInstance()
 
-    // ------------------------------------------------------------ CREATE
-    // FR-03: save a new order. The status always starts as Pending.
+    // ============================================================ CREATE
     fun addOrder(
         customerName: String,
         phone: String,
@@ -35,16 +37,14 @@ object OrderRepository {
         db.collection(ORDERS)
             .add(data)                                   // Firestore creates the document ID
             .addOnSuccessListener { ref -> onSuccess(ref.id) }
-            .addOnFailureListener { e -> onError(e.message ?: "Could not save the order") }
+            .addOnFailureListener { e -> onError(friendly(e)) }
     }
 
-    // ------------------------------------------------------------ READ
-    // FR-04: Active tab = Pending, Preparing, Out for Delivery
+    // ============================================================ READ
     fun loadActive(onResult: (List<Order>) -> Unit, onError: (String) -> Unit) {
         loadByStatuses(OrderStatus.activeStatuses, onResult, onError)
     }
 
-    // FR-05: History tab = Delivered, Cancelled
     fun loadHistory(onResult: (List<Order>) -> Unit, onError: (String) -> Unit) {
         loadByStatuses(OrderStatus.historyStatuses, onResult, onError)
     }
@@ -60,13 +60,13 @@ object OrderRepository {
             .addOnSuccessListener { snapshot ->
                 val orders = snapshot.documents
                     .mapNotNull { doc -> toOrder(doc) }
-                    .sortedByDescending { it.createdAt }     // newest first
+                    .sortedByDescending { it.createdAt }
                 onResult(orders)
             }
-            .addOnFailureListener { e -> onError(e.message ?: "Could not load orders") }
+            .addOnFailureListener { e -> onError(friendly(e)) }
     }
 
-    // FR-08: a rider sees only their own orders that are Out for Delivery
+
     fun loadForRider(
         riderId: String,
         onResult: (List<Order>) -> Unit,
@@ -82,10 +82,113 @@ object OrderRepository {
                     .sortedByDescending { it.createdAt }
                 onResult(orders)
             }
-            .addOnFailureListener { e -> onError(e.message ?: "Could not load deliveries") }
+            .addOnFailureListener { e -> onError(friendly(e)) }
     }
 
-    // Converts one Firestore document into our Order data class
+    // ============================================================ UPDATE
+    // onSuccess receives the new status.
+    fun advanceStatus(
+        orderId: String,
+        expectedStatus: String,
+        riderId: String?,
+        actor: User,
+        onSuccess: (String) -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val ref = db.collection(ORDERS).document(orderId)     // the exact record
+
+        val task = db.runTransaction(Transaction.Function<Pair<Boolean, String>> { tx ->
+            val snap = tx.get(ref)                            // read the CURRENT stored values
+            val current = snap.getString("status") ?: ""
+            val currentRider = snap.getString("riderId") ?: ""
+            val next = OrderStatus.next(current) ?: ""
+            val finalRider = if (riderId.isNullOrBlank()) currentRider else riderId
+
+            when {
+                !snap.exists() ->
+                    Pair(false, "This order no longer exists")
+                current != expectedStatus ->
+                    Pair(false, "This order was already changed. Go back and refresh.")
+                next.isEmpty() ->
+                    Pair(false, "This order is locked and cannot be changed")      // BR-05
+                (next == OrderStatus.PREPARING || next == OrderStatus.OUT_FOR_DELIVERY)
+                        && actor.role != Role.STAFF ->
+                    Pair(false, "Only Staff can do this")                           // BR-03
+                next == OrderStatus.DELIVERED
+                        && (actor.role != Role.RIDER || currentRider != actor.uid) ->
+                    Pair(false, "Only the assigned rider can mark this order Delivered") // BR-03
+                next == OrderStatus.OUT_FOR_DELIVERY && finalRider.isBlank() ->
+                    Pair(false, "Please assign a rider first")                      // BR-02
+                else -> {
+                    tx.update(ref, mapOf("status" to next, "riderId" to finalRider))
+                    Pair(true, next)
+                }
+            }
+        })
+
+        handle(task, onSuccess, onError)
+    }
+
+    // its status becomes Cancelled, and it moves to History (BR-04, BR-05).
+    fun cancelOrder(
+        orderId: String,
+        expectedStatus: String,
+        actor: User,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val ref = db.collection(ORDERS).document(orderId)
+
+        val task = db.runTransaction(Transaction.Function<Pair<Boolean, String>> { tx ->
+            val snap = tx.get(ref)
+            val current = snap.getString("status") ?: ""
+
+            when {
+                !snap.exists() ->
+                    Pair(false, "This order no longer exists")
+                actor.role != Role.STAFF ->
+                    Pair(false, "Only Staff can cancel an order")                   // BR-03
+                current != OrderStatus.PENDING || expectedStatus != OrderStatus.PENDING ->
+                    Pair(false, "Only Pending orders can be cancelled")             // BR-04
+                else -> {
+                    tx.update(ref, mapOf("status" to OrderStatus.CANCELLED))
+                    Pair(true, OrderStatus.CANCELLED)
+                }
+            }
+        })
+
+        handle(task, { onSuccess() }, onError)
+    }
+
+    // ============================================================ HELPERS
+    // Runs the success or error callback depending on the transaction result
+    private fun handle(
+        task: Task<Pair<Boolean, String>>,
+        onSuccess: (String) -> Unit,
+        onError: (String) -> Unit
+    ) {
+        task
+            .addOnSuccessListener { result ->
+                if (result.first) onSuccess(result.second) else onError(result.second)
+            }
+            .addOnFailureListener { e -> onError(friendly(e)) }
+    }
+
+    // Converts a Firebase exception into a short message for the user
+    private fun friendly(e: Exception): String {
+        if (e is FirebaseFirestoreException) {
+            return when (e.code) {
+                FirebaseFirestoreException.Code.PERMISSION_DENIED ->
+                    "You are not allowed to do this"
+                FirebaseFirestoreException.Code.UNAVAILABLE ->
+                    "No internet connection"
+                else -> e.message ?: "Something went wrong"
+            }
+        }
+        return e.message ?: "Something went wrong"
+    }
+
+    // Converts one Firestore document into our Order data class.
     private fun toOrder(doc: DocumentSnapshot): Order? {
         val name = doc.getString("customerName") ?: return null
         return Order(
